@@ -130,6 +130,7 @@ class Converter:
                 break
         else:
             self.max_bin = len(self.frequencies)
+           
             
     @staticmethod
     def _time_window_to_block_size(time_window, rate):
@@ -157,9 +158,9 @@ class Converter:
         for pitch, velocity in freqs:
             if not (self.pitch_range[0] <= pitch <= self.pitch_range[1]):
                 continue
-            velocity = min(int(127 * (velocity / self.bins)), 127)
+            #velocity = min(int(127 * (velocity / self.bins)), 127)
 
-            if velocity > self.activation_level:
+            if velocity > 1: #self.activation_level:
                 if not notes[pitch]:
                     notes[pitch] = Note(pitch, velocity)
                 else:
@@ -202,25 +203,11 @@ class Converter:
             note to a single amplitude by summing them together.
         """
 
-        reduced_freqs = []
+        reduced_freqs = {}
         for freq in freqs:
             reduced_freqs.append((self._freq_to_pitch(freq[0]), freq[1]))
         return reduced_freqs
         
-    def _fast_reduce_freqs(self, freqs):
-        """
-        freqs is a list of amplitudes produced by _fft_to_frequencies().
-        Reduces the list of frequencies to a list of notes and their
-            respective volumes by determining what note each frequency
-            is closest to. It then reduces the list of amplitudes for each
-            note to a single amplitude by summing them together.
-        """
-
-        reduced_freqs = []
-        for i in range(self.min_bin, self.max_bin):
-            reduced_freqs.append((self._freq_to_pitch(self.frequencies[i]), freqs[i]))
-        return reduced_freqs
-
     def _samples_to_freqs(self, samples):
         global line1
         amplitudes = numpy.fft.fft(samples)
@@ -245,17 +232,7 @@ class Converter:
         #line1 = live_plotter(xdata,ydata,line1)
         # Transform the frequency info into midi compatible data.
         return self._reduce_freqs(freqs)
-     
-    def _fast_samples_to_freqs(self, samples):
-        global line1
-        amplitudes = numpy.fft.fft(samples)
-        freqs = numpy.sqrt(numpy.float_power(amplitudes.real, 2)+numpy.float_power(amplitudes.imag, 2))
-
-
-        #line1 = live_plotter(self.frequencies[self.min_bin: self.max_bin],freqs[self.min_bin: self.max_bin],line1)
-        # Transform the frequency info into midi compatible data.
-        return self._fast_reduce_freqs(freqs)
-
+        
     def _block_to_notes(self, block):
         global line1
         channels = [[] for _ in range(self.channels)]
@@ -271,12 +248,54 @@ class Converter:
 
         return notes
         
+    def _fast_freqs_to_midi(self, freqs):
+        """
+        freq_list is a list of frequencies with normalized amplitudes.
+        Takes a list of notes and transforms the amplitude to a
+            midi volume as well as adding track and channel info.
+        """
+
+        notes = []
+        for pitch, velocity in enumerate(freqs):
+            if not (self.pitch_range[0] <= pitch <= self.pitch_range[1]):
+                continue
+            #velocity = min(int(127 * (velocity / self.bins)), 127)
+
+            if velocity > 1: #self.activation_level:
+                notes.append(Note(pitch, velocity))
+        return notes
+        
+    def _fast_reduce_freqs(self, freqs):
+        global line1
+        """
+        freqs is a list of amplitudes produced by _fft_to_frequencies().
+        Reduces the list of frequencies to a list of notes and their
+            respective volumes by determining what note each frequency
+            is closest to. It then reduces the list of amplitudes for each
+            note to a single amplitude by summing them together.
+        """
+
+        reduced_freqs = [0] * 128
+        for i in range(self.min_bin, self.max_bin):
+            reduced_freqs[self._freq_to_pitch(self.frequencies[i])] += freqs[i]
+        #line1 = live_plotter(range(128),reduced_freqs,line1)
+        return reduced_freqs
+     
+    def _fast_samples_to_freqs(self, samples):
+        global line1
+        amplitudes = numpy.fft.fft(samples)
+        freqs = numpy.sqrt(numpy.float_power(amplitudes.real, 2)+numpy.float_power(amplitudes.imag, 2))
+
+        #line1 = live_plotter(self.frequencies[self.min_bin: self.max_bin],freqs[self.min_bin: self.max_bin],line1)
+        # Transform the frequency info into midi compatible data.
+        return self._fast_reduce_freqs(freqs)
+        
     def _block_to_notes_single_channel(self, block):
         global line1
         notes = [None for _ in range(self.channels)]
         
         freqs = self._fast_samples_to_freqs(block.reshape(-1))
-        notes[0] = self._freqs_to_midi(freqs)
+        notes[0] = self._fast_freqs_to_midi(freqs)
 
         return notes
         
@@ -297,7 +316,7 @@ class Note:
         return f"Note(pitch={self.pitch},velocity={self.velocity},count={self.count})"
    
 line1=[]
-c = Converter(samplerate=RATE, channels=CHANNELS, frames=CHUNK, pitch_range=[24,108], activation_level=0.01/127, transpose=-24)
+c = Converter(samplerate=RATE, channels=CHANNELS, frames=CHUNK, pitch_range=[24,108], activation_level=0.0000001/127, transpose=-24)
 
 oldNotes = set()
 
