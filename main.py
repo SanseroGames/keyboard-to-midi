@@ -7,6 +7,11 @@ import os
 import pathlib
 import sys
 import matplotlib.pyplot as plt
+import argparse
+from pprint import pprint
+import inputs
+from multiprocessing import Process
+import math
 
 numpy.set_printoptions(threshold=sys.maxsize)
 path = pathlib.Path().resolve()
@@ -25,6 +30,7 @@ CHANNELS = 1
 RATE = 44100
 RECORD_SECONDS = 5
 CHUNK = 1024 # frames
+SHOW_PLOT = False
 
 def generate_notes():
     """
@@ -47,7 +53,7 @@ def generate_notes():
 
     return notes
 
-def live_plotter(x_vec,y1_data,line1,identifier='',pause_time=0.1):
+def live_plotter(x_vec,y1_data,line1,identifier='',pause_time=0.01):
     if line1==[]:
         # this is the call to matplotlib that allows dynamic plotting
         plt.ion()
@@ -65,8 +71,13 @@ def live_plotter(x_vec,y1_data,line1,identifier='',pause_time=0.1):
     # adjust limits if new data goes beyond bounds
     if numpy.min(y1_data)<=line1.axes.get_ylim()[0] or numpy.max(y1_data)>=line1.axes.get_ylim()[1]:
         plt.ylim([numpy.min(y1_data)-numpy.std(y1_data),numpy.max(y1_data)+numpy.std(y1_data)])
+    if numpy.max(y1_data)<=line1.axes.get_ylim()[1]/10 and numpy.max(y1_data) > 2:
+        plt.ylim([numpy.min(y1_data)-numpy.std(y1_data),numpy.max(y1_data)+numpy.std(y1_data)])
     # this pauses the data so the figure/axis can catch up - the amount of pause can be altered above
-    plt.pause(pause_time)
+    try:
+        plt.pause(pause_time)
+    except:
+        exit(1)
     
     # return line so we can update it again in the next iteration
     return line1
@@ -278,7 +289,8 @@ class Converter:
         reduced_freqs = [0] * 128
         for i in range(self.min_bin, self.max_bin):
             reduced_freqs[self._freq_to_pitch(self.frequencies[i])] += freqs[i]
-        #line1 = live_plotter(range(128),reduced_freqs,line1)
+        #if SHOW_PLOT:
+            #line1 = live_plotter(range(128),reduced_freqs,line1)
         return reduced_freqs
      
     def _fast_samples_to_freqs(self, samples):
@@ -286,7 +298,8 @@ class Converter:
         amplitudes = numpy.fft.fft(samples)
         freqs = numpy.sqrt(numpy.float_power(amplitudes.real, 2)+numpy.float_power(amplitudes.imag, 2))
 
-        #line1 = live_plotter(self.frequencies[self.min_bin: self.max_bin],freqs[self.min_bin: self.max_bin],line1)
+        if SHOW_PLOT:
+            line1 = live_plotter(self.frequencies[self.min_bin: int(self.max_bin/2)],freqs[self.min_bin: int(self.max_bin/2)],line1)
         # Transform the frequency info into midi compatible data.
         return self._fast_reduce_freqs(freqs)
         
@@ -320,6 +333,33 @@ c = Converter(samplerate=RATE, channels=CHANNELS, frames=CHUNK, pitch_range=[24,
 
 oldNotes = set()
 
+def handleGamepad():
+    current_left_stick = 0
+    current_right_stick = 0
+    while True:
+        events = inputs.get_gamepad()
+        for event in events:
+            if event.code == 'ABS_Y':
+                current_left_stick = event.state / 2 ** 15 # normalize between -1 and 1
+                msg = mido.Message("pitchwheel", pitch=int(current_left_stick*8191))
+                outport.send(msg)
+            elif event.code == 'ABS_RY':
+                current_right_stick = event.state / 2 ** 15 # normalize between -1 and 1
+                msg = mido.Message("control_change", control=42, value=int(current_right_stick*64)+64)
+                outport.send(msg)
+            elif event.code == 'ABS_Z':
+                left_trigger = event.state / 2
+                msg = mido.Message("control_change", control=43, value=int(left_trigger))
+                outport.send(msg)
+            elif event.code == 'ABS_RZ':
+                right_trigger = event.state / 2
+                msg = mido.Message("control_change", control=44, value=int(right_trigger))
+                outport.send(msg)
+            elif event.code == 'BTN_SOUTH':
+                abut = event.state
+                msg = mido.Message("control_change", control=45, value=int(abut*127))
+                outport.send(msg)
+        
 def callback(in_data, frame_count, time_info, status):
     global oldNotes
     notes = c.convert(in_data, frame_count)
@@ -335,26 +375,36 @@ def callback(in_data, frame_count, time_info, status):
     oldNotes=newNotes
     return (None, pyaudio.paContinue)
 
+def main():
+    p = pyaudio.PyAudio()
 
-# This somehow silences my webbrowser?... (reload of the page fixes it though)
-p = pyaudio.PyAudio()
+    stream = p.open(format=pyaudio.paFloat32,#p.get_format_from_width(WIDTH),
+                    channels=CHANNELS,
+                    rate=RATE,
+                    input=True,
+                    frames_per_buffer=CHUNK,
+                    stream_callback =callback)
 
-stream = p.open(format=pyaudio.paFloat32,#p.get_format_from_width(WIDTH),
-                channels=CHANNELS,
-                rate=RATE,
-                input=True,
-                frames_per_buffer=CHUNK,
-                stream_callback =callback)
+    stream.start_stream()
+    g = Process(target=handleGamepad)
+    g.start()
+    print("Running...")
+    try:
+        while stream.is_active():
+            time.sleep(0.1)
+    finally:
+        stream.stop_stream()
+        stream.close()
+        p.terminate()
+        g.terminate()
 
-stream.start_stream()
+    print("* terminated")
 
-print("Running...")
-try:
-    while stream.is_active():
-        time.sleep(0.1)
-finally:
-    stream.stop_stream()
-    stream.close()
-    p.terminate()
 
-print("* terminated")
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Listen to microphone and convert it to midi signal')
+    parser.add_argument('--visual', action='store_true',
+                        help='Show a plot showing the detected notes. (For debugging, adds latency)')
+    args = parser.parse_args()
+    SHOW_PLOT = args.visual
+    main()
