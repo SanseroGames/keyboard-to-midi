@@ -344,22 +344,24 @@ def handleGamepad():
                 msg = mido.Message("pitchwheel", pitch=int(current_left_stick*8191))
                 outport.send(msg)
             elif event.code == 'ABS_RY':
+                continue
                 current_right_stick = event.state / 2 ** 15 # normalize between -1 and 1
                 msg = mido.Message("control_change", control=42, value=int(current_right_stick*64)+64)
                 outport.send(msg)
             elif event.code == 'ABS_Z':
                 left_trigger = event.state / 2
-                msg = mido.Message("control_change", control=43, value=int(left_trigger))
+                msg = mido.Message("control_change", control=11, value=int(left_trigger))
                 outport.send(msg)
             elif event.code == 'ABS_RZ':
                 right_trigger = event.state / 2
-                msg = mido.Message("control_change", control=44, value=int(right_trigger))
+                msg = mido.Message("control_change", control=1, value=int(right_trigger))
                 outport.send(msg)
             elif event.code == 'BTN_SOUTH':
+                continue
                 abut = event.state
                 msg = mido.Message("control_change", control=45, value=int(abut*127))
                 outport.send(msg)
-        
+
 def callback(in_data, frame_count, time_info, status):
     global oldNotes
     notes = c.convert(in_data, frame_count)

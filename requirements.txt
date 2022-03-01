@@ -2,3 +2,5 @@ mido
 rtmidi
 pyaudio
 numpy
+matplotlib
+inputs
