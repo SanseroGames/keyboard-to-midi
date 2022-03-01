@@ -2,7 +2,7 @@
 
 I have a keyboard that only has a audio output, but way to use midi with my computer. But I wanted to use a keyboard to work with in my DAW so I made this script.
 
-This script tries to recognize which keys are pressed based on the audio in the microphone input. It is based on the project [audio-to-midi](https://github.com/NFJones/audio-to-midi]) but it tries to perform the analysis in real time and emit midi signals based on the recognized keys.
+This script tries to recognize which keys are pressed based on the audio in the microphone input. It is based on the project [audio-to-midi](https://github.com/NFJones/audio-to-midi) but it tries to perform the analysis in real time and emit midi signals based on the recognized keys.
 
 The script has a visualisation graph to help adjust the microphone input volume such that only the keys are recognized that should be, but you should disable it if you don't need it, as it adds latency to the process. Also the script maps a Xbox controller to midi controller, for example for pitch bending or velocity control.
 
